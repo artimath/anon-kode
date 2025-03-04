@@ -34,6 +34,7 @@ import OpenAI from 'openai'
 import type { ChatCompletionStream } from 'openai/lib/ChatCompletionStream'
 import { ContentBlock } from '@anthropic-ai/sdk/resources/messages/messages'
 import { nanoid } from 'nanoid'
+import { withApiLogging } from '../utils/apiLogger'
 const openaiClients: Record<string, OpenAI> = {}
 
 export function getOpenAIClient(type: 'large' | 'small'): OpenAI {
@@ -150,7 +151,7 @@ function shouldRetry(error: APIError): boolean {
   return false
 }
 
-async function withRetry<T>(
+function withRetry<T>(
   operation: (attempt: number) => Promise<T>,
   options: RetryOptions = {},
 ): Promise<T> {
@@ -159,7 +160,7 @@ async function withRetry<T>(
 
   for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
     try {
-      return await operation(attempt)
+      return operation(attempt)
     } catch (error) {
       lastError = error
 
@@ -187,7 +188,7 @@ async function withRetry<T>(
         provider: USE_BEDROCK ? 'bedrock' : USE_VERTEX ? 'vertex' : '1p',
       })
 
-      await new Promise(resolve => setTimeout(resolve, delayMs))
+      return new Promise(resolve => setTimeout(() => resolve(operation(attempt)), delayMs))
     }
   }
 
@@ -660,8 +661,6 @@ async function queryOpenAI(
     prependCLISysprompt: boolean
   },
 ): Promise<AssistantMessage> {
-
-  //const anthropic = await getAnthropicClient(options.model)
   const openai = getOpenAIClient(modelType)
   const model = modelType === 'large' ? getGlobalConfig().largeModelName : getGlobalConfig().smallModelName
   // Prepend system prompt block for easy API identification
@@ -704,7 +703,6 @@ async function queryOpenAI(
       }})as OpenAI.ChatCompletionTool) ,
   )
 
-
   const openaiSystem = system.map(s => ({
     role: 'system',
     content: s.text,
@@ -713,7 +711,6 @@ async function queryOpenAI(
   const openaiMessages = convertAnthropicMessagesToOpenAIMessages(messages)
   const startIncludingRetries = Date.now()
 
-  
   for (const tool of toolSchemas) {
     if(model.startsWith('gpt-')) {
       if(tool.function.description.length > 1024) {
@@ -728,27 +725,47 @@ async function queryOpenAI(
   let response
 
   try {
+    // Wrap the API call with our logging function
     response = await withRetry(async attempt => {
       attemptNumber = attempt
       start = Date.now()
 
-      const s = openai.beta.chat.completions.stream({
-        model,
-        max_tokens: Math.max(
-            maxThinkingTokens + 1,
-            getMaxTokensForModel(model),
-          ),
-        messages: [...openaiSystem, ...openaiMessages],
-        temperature: MAIN_QUERY_TEMPERATURE,
-        stream: true,
-        stream_options: {
-          include_usage: true,
+      // Log the API call
+      return await withApiLogging(
+        'openai',
+        `/chat/completions`,
+        'POST',
+        {
+          model,
+          messages: [...openaiSystem, ...openaiMessages],
+          temperature: MAIN_QUERY_TEMPERATURE,
+          stream: true,
+          stream_options: {
+            include_usage: true,
+          },
+          tools: toolSchemas,
+          tool_choice: 'auto',
         },
-        tools: toolSchemas,
-        tool_choice: 'auto',
-        // metadata: getMetadata(),
-      })
-      return handleMessageStream(s)
+        async () => {
+          const s = openai.beta.chat.completions.stream({
+            model,
+            max_tokens: Math.max(
+              maxThinkingTokens + 1,
+              getMaxTokensForModel(model),
+            ),
+            messages: [...openaiSystem, ...openaiMessages],
+            temperature: MAIN_QUERY_TEMPERATURE,
+            stream: true,
+            stream_options: {
+              include_usage: true,
+            },
+            tools: toolSchemas,
+            tool_choice: 'auto',
+            // metadata: getMetadata(),
+          })
+          return handleMessageStream(s)
+        }
+      )
     })
   } catch (error) {
     logError(error)
@@ -788,7 +805,6 @@ async function queryOpenAI(
     uuid: randomUUID(),
   }
 }
-
 
 async function queryHaikuWithPromptCaching(
   messages: (UserMessage | AssistantMessage)[],

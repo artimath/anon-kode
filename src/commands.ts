@@ -16,13 +16,27 @@ import pr_comments from './commands/pr_comments'
 import releaseNotes from './commands/release-notes'
 import review from './commands/review'
 import terminalSetup from './commands/terminalSetup'
-import { Tool, ToolUseContext } from './Tool'
+import { Tool } from './Tool'
 import resume from './commands/resume'
+import apilogs from './commands/apilogs'
 import { getMCPCommands } from './services/mcpClient'
 import type { MessageParam } from '@anthropic-ai/sdk/resources/index.mjs'
 import { memoize } from 'lodash-es'
 import type { Message } from './query'
 import { isAnthropicAuthEnabled } from './utils/auth'
+import * as React from 'react'
+
+// Define ToolUseContext interface
+export interface ToolUseContext {
+  options: {
+    commands: Command[]
+    tools: Tool[]
+    slowAndCapableModel: string
+    maxThinkingTokens?: number
+    dangerouslySkipPermissions?: boolean
+  }
+  abortController: AbortController
+}
 
 type PromptCommand = {
   type: 'prompt'
@@ -89,6 +103,7 @@ const COMMANDS = memoize((): Command[] => [
   bug,
   review,
   terminalSetup,
+  apilogs,
   ...(isAnthropicAuthEnabled() ? [logout, login()] : []),
   ...INTERNAL_ONLY_COMMANDS,
 ])

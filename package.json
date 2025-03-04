@@ -74,5 +74,8 @@
   "devDependencies": {
     "react-devtools-core": "^6.1.1",
     "tsx": "^4.19.3"
-  }
+  },
+  "trustedDependencies": [
+    "@anthropic-ai/claude-code"
+  ]
 }

@@ -3,6 +3,9 @@ import { initSentry } from '../services/sentry'
 import { PRODUCT_NAME } from '../constants/product'
 initSentry() // Initialize Sentry as early as possible
 
+// Initialize API logging
+import { enableApiLogging } from '../utils/apiLogger'
+
 // XXX: Without this line (and the Object.keys, even though it seems like it does nothing!),
 // there is a bug in Bun only on Win32 that causes this import to be removed, even though
 // its use is solely because of its side-effects.
@@ -269,6 +272,12 @@ async function setup(
 }
 
 async function main() {
+  resetCursor()
+  cleanupOldMessageFilesInBackground()
+  
+  // Enable API logging
+  enableApiLogging()
+  
   // Validate configs are valid and enable configuration system
   try {
     enableConfigs()
@@ -283,9 +292,6 @@ async function main() {
   let inputPrompt = ''
   let renderContext: RenderOptions | undefined = {
     exitOnCtrlC: false,
-    onFlicker() {
-      logEvent('tengu_flicker', {})
-    },
   }
 
   if (
